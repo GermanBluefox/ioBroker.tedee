@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { expect } = require('chai');
 const { HELP, COMMANDS } = require('./lib/help');
+const { ACCESS_COMMANDS } = require('./lib/access');
 
 /**
  * Returns the source between two markers.
@@ -31,6 +32,9 @@ function handledCommands() {
   accepted.push(...[...list[1].matchAll(/'([^']+)'/g)].map((m) => m[1]));
   const handled = slice('lib/pinManager.js', '  async handleCommand(command, message) {', '      default:');
   const cases = [...handled.matchAll(/case '([^']+)':/g)].map((m) => m[1]);
+  // the commands of the shared catalog, mapped onto the PIN commands
+  expect(onMessage).to.include('hasOwnProperty.call(ACCESS_COMMANDS, obj.command)');
+  accepted.push(...Object.keys(ACCESS_COMMANDS));
   return { accepted, cases };
 }
 
@@ -42,7 +46,23 @@ describe('help', () => {
     const { accepted, cases } = handledCommands();
     expect(new Set(listed).size).to.equal(listed.length);
     expect([...listed].sort()).to.deep.equal([...new Set(accepted)].sort());
-    expect([...cases, 'help'].sort()).to.deep.equal([...listed].sort());
+    expect([...cases, 'help', ...Object.keys(ACCESS_COMMANDS)].sort()).to.deep.equal([...listed].sort());
+  });
+
+  it('marks the commands of the shared catalog', () => {
+    const marked = Object.fromEntries(COMMANDS.filter((c) => c.standard).map((c) => [c.command, c.standard]));
+    expect(marked).to.deep.equal({
+      createCode: 'access.createCode',
+      getCodes: 'access.getCodes',
+      updateCode: 'access.updateCode',
+      deleteCode: 'access.deleteCode',
+    });
+    // every alias maps onto a PIN command and has its write flag
+    for (const [standard, pinCommand] of Object.entries(ACCESS_COMMANDS)) {
+      const own = COMMANDS.find((c) => c.command === pinCommand);
+      expect(COMMANDS.find((c) => c.command === standard).write, standard).to.equal(own.write);
+    }
+    expect(HELP).to.include('shared catalog');
   });
 
   it('names every command and every remote state', () => {

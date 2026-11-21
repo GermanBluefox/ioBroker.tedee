@@ -18,6 +18,15 @@ const { RequestQueue } = require('./lib/requestQueue');
 const { isUnreachable } = require('./lib/bridgeStatus');
 const { HELP, COMMANDS } = require('./lib/help');
 const {
+  ACCESS_COMMANDS,
+  AccessError,
+  findLock,
+  findLockOfCode,
+  codeId,
+  toPinCommand,
+  toAccessAnswer,
+} = require('./lib/access');
+const {
   DEVICE_FIELDS,
   SETTINGS_FIELDS,
   BRIDGE_FIELDS,
@@ -245,6 +254,11 @@ class Tedee extends utils.Adapter {
       reply({ help: HELP, commands: COMMANDS });
       return;
     }
+    if (Object.prototype.hasOwnProperty.call(ACCESS_COMMANDS, obj.command)) {
+      // the commands of the shared catalog (access.*), mapped onto the PIN commands
+      reply(await this.handleAccessCommand(obj.command, obj.message));
+      return;
+    }
     const commands = ['getPins', 'getPin', 'createPin', 'updatePin', 'deletePin', 'refreshPins'];
     if (!commands.includes(obj.command)) {
       reply({ error: `unknown command ${obj.command}` });
@@ -266,6 +280,53 @@ class Tedee extends utils.Adapter {
       const message = error instanceof PinError ? error.message : `internal error: ${error.message}`;
       this.log.warn(`${obj.command}: ${message}`);
       reply({ error: message });
+    }
+  }
+
+  /**
+   * The commands of the shared catalog: createCode, getCodes, updateCode, deleteCode (lib/access.js).
+   *
+   * @param {string} command the standard command
+   * @param {unknown} message its message
+   * @returns {Promise<Record<string, unknown>>} the answer, {error, reason?} on failure
+   */
+  async handleAccessCommand(command, message) {
+    const msg = /** @type {Record<string, unknown>} */ (message && typeof message === 'object' ? message : {});
+    try {
+      if (!this.config.pinManagement) {
+        throw new AccessError('PIN management is disabled in the instance settings', 'NOT_ALLOWED');
+      }
+      const locks = Object.entries(this.pinManager.locks).map(([id, lock]) => {
+        const device = this.deviceArray.find((d) => d.id.toString().replace(this.FORBIDDEN_CHARS, '_') === id);
+        return { id, name: (device && device.name) || '', pinIds: [...lock.pins.keys()] };
+      });
+      const id = command === 'updateCode' || command === 'deleteCode' ? codeId(msg.id) : undefined;
+      const lockId =
+        id !== undefined && (msg.lock == null || msg.lock === '')
+          ? findLockOfCode(id, locks)
+          : findLock(msg.lock, locks);
+      const pin = toPinCommand(command, msg, lockId, id);
+      if (command === 'createCode') {
+        try {
+          // the checks of the PIN, so that a wrong field answers BAD_REQUEST
+          this.pinManager.buildBody(/** @type {import('./lib/pinManager').PinInput} */ (pin.message));
+        } catch (error) {
+          throw new AccessError(error.message, 'BAD_REQUEST');
+        }
+      }
+      const result = await this.pinManager.handleCommand(
+        pin.command,
+        /** @type {import('./lib/pinManager').PinCommand & import('./lib/pinManager').PinInput} */ (pin.message),
+      );
+      return toAccessAnswer(command, result, msg);
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return error.answer();
+      }
+      // @KI_HINWEIS: only the error message is returned/logged, never the request (it may contain the PIN code)
+      const text = error instanceof PinError ? error.message : `internal error: ${error.message}`;
+      this.log.warn(`${command}: ${text}`);
+      return { error: text };
     }
   }
 

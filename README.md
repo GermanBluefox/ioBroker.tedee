@@ -130,6 +130,15 @@ Fields for `createPin` / `updatePin`:
 
 `updatePin` keeps all fields that are not given, including the PIN code.
 
+The same commands with the names and parameters of the shared catalog of ioBroker adapters (family `access`, marked with `standard` in the answer of `help`): `lock` is the lock id or its name (left out: the only lock), errors answer `{ error, reason }` (`NOT_ALLOWED`, `NOT_FOUND`, `AMBIGUOUS` with `candidates`, `BAD_REQUEST`).
+
+| Command      | Parameters                                                                            | Result                                                                  |
+| ------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `createCode` | `lock`, `name`, `code` (required, 5 – 8 digits), `start`, `end`, `weekdays`, `dayStart`, `dayEnd` | `{ id, code, lock }`                                                    |
+| `getCodes`   | `lock`                                                                                | `{ lock, codes: [{ id, name, active, start, end, dayStart, dayEnd, weekdays, weekdaysText }] }` |
+| `updateCode` | `id`, `lock`, only the fields to change                                               | `{ ok: true, id, lock }`                                                |
+| `deleteCode` | `id`, `lock` (left out: the lock that has this code)                                  | `{ ok: true, id, lock }`                                                |
+
 `help` (no parameters, also without PIN management) answers `{ help, commands }`: a description of all commands and data points for AI agents (e.g. pi-agent) and script authors; `commands` lists every command with `write: true` if it changes something.
 
 #### Examples (JavaScript adapter)
@@ -326,6 +335,7 @@ Webhooks: the adapter starts a small web server (port 29170 or the next free por
 
 ### **WORK IN PROGRESS**
 
+- (@GermanBluefox) Added the standard commands of the shared catalog: access.createCode, access.getCodes, access.updateCode, access.deleteCode (aliases of the PIN commands)
 - (@GermanBluefox) Added the message "help": a description of all messages for AI agents (e.g. pi-agent), and common.supportedMessages.help
 - (Schimi1983) Fix: lock and unlock are repeated when the busy bridge resets the connection (Bridge API 1.20)
 - (Schimi1983) Firmware version and other bridge data are updated after a restart of the bridge (e.g. firmware update) and every hour
